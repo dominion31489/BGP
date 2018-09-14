@@ -1,0 +1,155 @@
+import os, sys, re, glob
+from shutil import copyfile
+
+print('Please specify the configuration file name')
+asaConfig = input()
+openConfig = open(asaConfig, 'r')
+tempConfig = open(asaConfig + '.tmp', 'w')
+
+# Establish variables to be used in VLAN data move for first loop.
+isInVlan1 = -1
+isInVlan2 = -1
+isInVlan12 = -1
+vlan1Content = ''
+vlan2Content = ''
+vlan12Content = ''
+
+# Loop through the file once and fill variables for data that will be needed later.
+for line in openConfig:
+    if isInVlan1 >= 0 and isInVlan1 <= 2:
+        vlan1Content = vlan1Content + line
+        isInVlan1 = isInVlan1 + 1
+        continue
+    if isInVlan2 >= 0 and isInVlan2 <= 2:
+        vlan2Content = vlan2Content + line
+        isInVlan2 = isInVlan2 + 1
+        continue
+    if isInVlan12 >= 0 and isInVlan12 <= 2:
+        vlan12Content = vlan12Content + line
+        isInVlan12 = isInVlan12 + 1
+        continue
+    if 'interface Vlan1' in line:
+        isInVlan1 = 0
+    if 'interface Vlan2' in line:
+        isInVlan2 = 0
+    if 'interface Vlan12' in line:
+        isInVlan12 = 0
+
+openConfig.close()
+openConfig = open(asaConfig, 'r')
+
+# loop through the file and replace all important values.
+for line in openConfig:
+    if 'ASA Version' in line:
+        tempConfig.write('ASA Version 9.8(2)20\n')
+    elif 'interface Ethernet0/0' in line:
+        tempConfig.write(line.replace('interface Ethernet', 'interface GigabitEthernet'))
+        tempConfig.write(vlan2Content)
+    elif 'interface Ethernet0/1' in line:
+        tempConfig.write(line.replace('interface Ethernet', 'interface GigabitEthernet'))
+        tempConfig.write(vlan1Content)
+    elif 'interface Ethernet0/2' in line:
+        tempConfig.write(line.replace('interface Ethernet', 'interface GigabitEthernet'))
+        tempConfig.write(vlan12Content)
+    elif 'interface Ethernet0/3' in line:
+        tempConfig.write(line.replace('interface Ethernet0/3', 'interface GigabitEthernet0/3'))
+    elif 'interface Ethernet0/4' in line:
+        tempConfig.write(line.replace('interface Ethernet0/4', 'interface GigabitEthernet0/4'))
+    elif 'interface Ethernet0/5' in line:
+        tempConfig.write(line.replace('interface Ethernet0/5', 'interface GigabitEthernet0/5'))
+    elif 'interface Ethernet0/6' in line:
+        tempConfig.write(line.replace('interface Ethernet0/6', 'interface GigabitEthernet0/6'))
+    elif 'interface Ethernet0/7' in line:
+        tempConfig.write(line.replace('interface Ethernet0/7', 'interface GigabitEthernet0/7'))
+    elif 'boot system' in line:
+        tempConfig.write('boot system disk0:/asa982-20-smp-k8.bin\n')
+    elif 'asdm image' in line:
+        tempConfig.write('asdm image disk0:/asdm-781-150.bin\n')
+    elif 'disk0:/anyconnect-win-' in line:
+        tempConfig.write(' anyconnect image disk0:/anyconnect-win-4.3.05017-k9.pkg 1\n')
+    elif 'disk0:/anyconnect-macosx-powerpc-' in line:
+        tempConfig.write('!\n')
+    elif 'disk0:/anyconnect-macosx-' in line:
+        tempConfig.write(' anyconnect image disk0:/anyconnect-macosx-i386-4.3.05017-k9.pkg 2\n')
+    elif 'reactivation-mode depletion deadtime' in line:
+        tempConfig.write('reactivation-mode depletion deadtime 60\n')
+    elif 'crypto isakmp policy' in line:
+        tempConfig.write(line.replace('crypto isakmp policy', 'crypto ikev1 policy'))
+    elif 'key K3oke!9LkJKE32' in line:
+        tempConfig.write(' key K3oke!9LkJKE32\n')
+        tempConfig.write(' timeout 2\n')
+    elif ' switchport access vlan' in line:
+        tempConfig.write('!\n')
+    elif 'ip local pool remote_access_pool' in line:
+        tempConfig.write('ip local pool remote_access_pool 10.254.254.1-10.254.254.254 mask 255.255.255.0\n')
+    elif 'username ewhadmin password' in line:
+        if 'privilege 15' in line:
+            tempConfig.write(line)
+        else:
+            tempConfig.write(line.replace('privilege 0', 'privilege 15'))
+    elif 'service-policy global_policy global' in line:
+        tempConfig.write('arp permit-nonconnected\n')
+        tempConfig.write('interface GigabitEthernet0/8\n')
+        tempConfig.write(' shutdown\n')
+        tempConfig.write(' no nameif\n')
+        tempConfig.write(' no security-level\n')
+        tempConfig.write(' no ip address\n')
+        tempConfig.write('!\n')
+        tempConfig.write('interface Management0/0\n')
+        tempConfig.write(' management-only\n')
+        tempConfig.write(' nameif management\n')
+        tempConfig.write(' security-level 0\n')
+        tempConfig.write(' ip address dhcp\n')
+        tempConfig.write('!\n')
+        tempConfig.write('http 172.16.4.0 255.255.254.0 management\n')
+        tempConfig.write('ssh 172.16.4.0 255.255.254.0 management\n')
+        tempConfig.write('route management 172.16.0.0 255.255.254.0 192.168.6.1 1\n')
+        tempConfig.write('route management 172.16.4.0 255.255.254.0 192.168.6.1 1\n')
+        tempConfig.write('route management 192.168.0.0 255.255.0.0 192.168.6.1 1\n')
+        tempConfig.write('management-access inside\n')
+        tempConfig.write('object network obj-remote_access_pool\n')
+        tempConfig.write(' subnet 10.254.254.0 255.255.255.0\n')
+        tempConfig.write(
+            'nat (any,outside) source static any any destination static obj-remote_access_pool obj-remote_access_pool no-proxy-arp route-lookup\n')
+        tempConfig.write('rest-api image boot:/asa-restapi-132-100-lfbff-k8.SPA\n')
+        tempConfig.write('rest-api agent\n')
+        tempConfig.write('license smart\n')
+        tempConfig.write(' throughput level 100M\n')
+        tempConfig.write(' feature tier standard\n')
+        tempConfig.write('service-policy global_policy global\n')
+    elif 'policy-map global_policy' in line:
+        tempConfig.write('arp permit-nonconnected\n')
+        tempConfig.write('interface GigabitEthernet0/8\n')
+        tempConfig.write(' shutdown\n')
+        tempConfig.write(' no nameif\n')
+        tempConfig.write(' no security-level\n')
+        tempConfig.write(' no ip address\n')
+        tempConfig.write('!\n')
+        tempConfig.write('interface Management0/0\n')
+        tempConfig.write(' management-only\n')
+        tempConfig.write(' nameif management\n')
+        tempConfig.write(' security-level 0\n')
+        tempConfig.write(' ip address dhcp\n')
+        tempConfig.write('!\n')
+        tempConfig.write('http 172.16.4.0 255.255.254.0 management\n')
+        tempConfig.write('ssh 172.16.4.0 255.255.254.0 management\n')
+        tempConfig.write('route management 172.16.0.0 255.255.254.0 192.168.6.1 1\n')
+        tempConfig.write('route management 172.16.4.0 255.255.254.0 192.168.6.1 1\n')
+        tempConfig.write('route management 192.168.0.0 255.255.0.0 192.168.6.1 1\n')
+        tempConfig.write('management-access inside\n')
+        tempConfig.write('object network obj-remote_access_pool\n')
+        tempConfig.write(' subnet 10.254.254.0 255.255.255.0\n')
+        tempConfig.write(
+            'nat (any,outside) source static any any destination static obj-remote_access_pool obj-remote_access_pool no-proxy-arp route-lookup\n')
+        tempConfig.write('rest-api image boot:/asa-restapi-132100-lfbff-k8.SPA\n')
+        tempConfig.write('rest-api agent\n')
+        tempConfig.write('license smart\n')
+        tempConfig.write(' throughput level 100M\n')
+        tempConfig.write(' feature tier standard\n')
+        tempConfig.write('policy-map global_policy\n')
+    else:
+        tempConfig.write(line)
+
+openConfig.close()
+tempConfig.close()
+
